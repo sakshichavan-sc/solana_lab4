@@ -36,6 +36,7 @@ function App() {
   const [jarInfo, setJarInfo] = useState(null);
   const [status, setStatus] = useState("Connect Phantom and select Solana Devnet.");
   const [busy, setBusy] = useState(false);
+  const [recipient, setRecipient] = useState("");
 
   const refreshInfo = useCallback(async (creator) => {
     if (!creator) return;
@@ -90,7 +91,7 @@ function App() {
     }
   }, [wallet, creatorAddress, refreshInfo]);
 
-  async function sendInstruction(label, keys, data, creator) {
+  async function sendInstruction(label, keys, data, creator, ixOverride) {
     const provider = window.phantom?.solana || window.solana;
     if (!wallet || !provider) {
       setStatus("Connect Phantom first.");
@@ -98,7 +99,7 @@ function App() {
     }
     setBusy(true);
     try {
-      const tx = new Transaction().add(new TransactionInstruction({ programId: PROGRAM_ID, keys, data }));
+      const tx = new Transaction().add(ixOverride || new TransactionInstruction({ programId: PROGRAM_ID, keys, data }));
       const latest = await connection.getLatestBlockhash("confirmed");
       tx.feePayer = wallet;
       tx.recentBlockhash = latest.blockhash;
@@ -173,6 +174,18 @@ function App() {
     ], Buffer.concat([await disc("withdraw"), amountBytes(Math.round(n * LAMPORTS_PER_SOL))]), creator);
   }
 
+  async function sendSol() {
+    if (!wallet) return setStatus("Connect Phantom first.");
+    const n = Number(amount);
+    if (!Number.isFinite(n) || n <= 0) return setStatus("Enter an amount greater than 0 SOL.");
+    let to;
+    try { to = toPublicKey(recipient); } catch { return setStatus("Enter a valid recipient address."); }
+    if (balance !== null && balance < n + 0.001) return setStatus("Insufficient wallet balance for this transfer plus fees.");
+    await sendInstruction("Send SOL", [], null, null, SystemProgram.transfer({
+      fromPubkey: wallet, toPubkey: to, lamports: Math.round(n * LAMPORTS_PER_SOL)
+    }));
+  }
+
   async function refresh() {
     try {
       if (!creatorAddress) return;
@@ -200,6 +213,10 @@ function App() {
       <label>Amount (SOL)</label>
       <input type="number" min="0.000000001" step="0.001" value={amount} onChange={e => setAmount(e.target.value)} />
       <div className="actions"><button disabled={busy || !wallet} onClick={tip}>Send tip</button><button className="secondary" disabled={busy || !wallet} onClick={withdraw}>Creator withdraw</button></div>
+      <h2>4. Send SOL (System Program transfer)</h2>
+      <label>Recipient address</label>
+      <input value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="Recipient Solana address" />
+      <button disabled={busy || !wallet} onClick={sendSol}>Send SOL (uses amount above)</button>
       <label>Status / transaction</label><p className="status">{busy ? "Waiting for Phantom confirmation…" : status}</p>
       <p className="small">Devnet only. Never enter a seed phrase or private key in this app.</p>
     </section>
